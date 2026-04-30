@@ -209,6 +209,11 @@ class Client :
     # * @return ERROR if another error occurred
     @staticmethod
     def  users() :
+
+        if Client._current_user is None:
+            print("ERROR: NOT CONNECTED")
+            return Client.RC.USER_ERROR
+        
         sock = Client.connectToServer()
         # Protocolo sección 8.7:
         #   "USERS\0" + current_user\0
@@ -295,6 +300,10 @@ class Client :
     # * @return ERROR the user does not exist or another error occurred
     @staticmethod
     def  send(user,  message) :
+        if Client._current_user is None:
+            print("ERROR: NOT CONNECTED")
+            return Client.RC.USER_ERROR
+        
         sock = Client.connectToServer()
         # Protocolo sección 8.5:
         # "SEND\0" + remitente\0 + destinatario\0 + mensaje\0
@@ -378,7 +387,7 @@ class Client :
                         if (len(line) == 1) :
                             Client.users()
                         else :
-                            print("Syntax error. Usage: CONNECTED_USERS <userName>")
+                            print("Syntax error. Usage: USERS")
 
                     elif(line[0]=="SEND") :
                         if (len(line) >= 3) :

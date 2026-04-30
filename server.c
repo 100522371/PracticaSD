@@ -137,6 +137,12 @@ void *handle_client(void *arg) {
         recv_string(client_sock, username);
         pthread_mutex_lock(&users_mutex);
 
+        int idx = find_user(username);
+        if (idx != -1) {
+            //limpiar mensajes pendientes
+            users[idx].num_pending = 0;
+        }
+
         if (remove_user(username)) {
             // Usuario eliminado correctamente
             char code = 0;
@@ -304,7 +310,7 @@ void *handle_client(void *arg) {
         int receiver_idx = find_user(receiver);
 
         if (sender_idx == -1 || receiver_idx == -1) {
-            // o emisor o remitente no existen
+            // emisor o receptor no existe
             char code = 1;
             send(client_sock, &code, 1, 0);
             printf("s> SEND FAIL\n");
@@ -320,7 +326,10 @@ void *handle_client(void *arg) {
             m.id = msg_id;
 
             User *recv_user = &users[receiver_idx];
-            recv_user->pending[recv_user->num_pending++] = m;
+            //controlar overflow
+            if (recv_user->num_pending < 100) {
+                recv_user->pending[recv_user->num_pending++] = m;
+            }
 
             //Si el receptor está desconectado, el mensaje queda alamacenado
             if (!users[receiver_idx].connected) {
@@ -358,6 +367,10 @@ void *handle_client(void *arg) {
                     send(sock_dest, id_str2, strlen(id_str2) + 1, 0);
                     send(sock_dest, message, strlen(message) + 1, 0);
 
+                    // ELiminamos el mensaje de la cola
+                    for (int j = 0; j < recv_user->num_pending - 1; j++) {
+                        recv_user->pending[j] = recv_user->pending[j + 1];
+                    }
                     recv_user->num_pending--;
                 } else {
                     //si falla conexión a receptor, consideramos desconectado
@@ -395,12 +408,18 @@ void *handle_client(void *arg) {
         pthread_mutex_lock(&users_mutex);
         int idx = find_user(requester);
 
-        if (idx == -1 || !users[idx].connected) {
-            // Usuario no exist o no está conectado
-            char code = 1;
+        if (idx == -1) {
+            // Usuario no existe
+            char code = 2;
             send(client_sock, &code, 1, 0);
             printf("s> CONNECTEDUSERS FAIL\n");
 
+        } else if (!users[idx].connected) {
+            //Usuario no conectado
+            char code = 1;
+            send(client_sock, &code, 1, 0);
+            printf("s> CONNECTEDUSERS FAIL\n");
+            
         } else {
             // Contamos usuarios conectados
             int count = 0;
