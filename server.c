@@ -269,6 +269,25 @@ void *handle_client(void *arg) {
                     send(sock_dest, message, strlen(message) + 1, 0);
                 }
                 close(sock_dest);
+
+                // Notificar al emisor si está conectado
+                if (users[sender_idx].connected) {
+                    int sock_sender = socket(AF_INET, SOCK_STREAM, 0);
+
+                    struct sockaddr_in sender_addr;
+                    sender_addr.sin_family = AF_INET;
+                    sender_addr.sin_port = htons(users[sender_idx].port);
+                    inet_pton(AF_INET, users[sender_idx].ip, &sender_addr.sin_addr);
+
+                    if (connect(sock_sender, (struct sockaddr *)&sender_addr, sizeof(sender_addr)) == 0) {
+                        send(sock_sender, "SEND_MESS_ACK\0", strlen("SEND_MESS_ACK") + 1, 0);
+
+                        char id_str3[20];
+                        sprintf(id_str3, "%u", global_msg_id);
+                        send(sock_sender, id_str3, strlen(id_str3) + 1, 0);
+                    }
+                    close(sock_sender);
+                }
             }
         }
         pthread_mutex_unlock(&users_mutex);
