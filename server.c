@@ -1,0 +1,279 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <arpa/inet.h>
+#include <pthread.h>
+
+#define BUFFER_SIZE 1024
+#define MAX_USERS 100
+
+// información del usuario
+typedef struct {
+    char username[50];
+    char ip[INET_ADDRSTRLEN];
+    int port;
+    int connected; // 0 desconectado, 1 conectado
+} User;
+
+// Lista global de usuarios
+User users[MAX_USERS];
+int num_users = 0;
+
+// Mutex para evitar problemas entre hilos
+pthread_mutex_t users_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+// Función que lee cadenas terminadas en \0
+void recv_string(int sock, char *buffer) {
+    int i = 0;
+    char c;
+
+    while (1) {
+        int n = recv(sock, &c, 1, 0);
+        if (n <= 0) break;
+
+        if (c == '\0') break;
+
+        buffer[i++] = c;
+    }
+
+    buffer[i] = '\0';
+}
+
+// Comprobar si un usuario ya existe
+int user_exists(char *username) {
+    for (int i = 0; i < num_users; i++) {
+        if (strcmp(users[i].username, username) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+// devolver índice del user o -1 si no existe
+int find_user(char *username) {
+    for (int i = 0; i < num_users; i++) {
+        if (strcmp(users[i].username, username) == 0) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+// Eliminar un usuario del array
+int remove_user(char *username) {
+    for (int i = 0; i < num_users; i++) {
+        if (strcmp(users[i].username, username) == 0) {
+
+            // Desplazar elementos hacia la izda
+            for (int j = i; j < num_users - 1; j++) {
+                users[j] = users[j + 1];
+            }
+
+            num_users--;
+            return 1; // si eliminado correctamente
+        }
+    }
+    return 0; // si no encontrado
+}
+
+// Atender a un cliente
+void *handle_client(void *arg) {
+    int client_sock = *(int *)arg;
+    free(arg);
+
+    char operation[BUFFER_SIZE];
+
+    recv_string(client_sock, operation);
+
+    if (strcmp(operation, "REGISTER") == 0) {
+
+        char username[50];
+        recv_string(client_sock, username);
+        pthread_mutex_lock(&users_mutex);
+
+        if (user_exists(username)) {
+            // Usuario ya existe
+            char code = 1;
+            send(client_sock, &code, 1, 0);
+            printf("s> REGISTER %s FAIL\n", username);
+
+        } else if (num_users < MAX_USERS) {
+            // usuario nuevo
+            strcpy(users[num_users].username, username);
+            users[num_users].connected = 0;
+            users[num_users].port = 0;
+            users[num_users].ip[0] = '\0';
+
+            num_users++;
+            char code = 0;
+            send(client_sock, &code, 1, 0);
+            printf("s> REGISTER %s OK\n", username);
+
+        } else {
+            // Error 
+            char code = 2;
+            send(client_sock, &code, 1, 0);
+            printf("s> REGISTER %s FAIL\n", username);
+        }
+
+        pthread_mutex_unlock(&users_mutex);
+
+    } else if (strcmp(operation, "UNREGISTER") == 0) {
+
+        char username[50];
+        recv_string(client_sock, username);
+        pthread_mutex_lock(&users_mutex);
+
+        if (remove_user(username)) {
+            // Usuario eliminado correctamente
+            char code = 0;
+            send(client_sock, &code, 1, 0);
+            printf("s> UNREGISTER %s OK\n", username);
+
+        } else {
+            // Usuario no existe
+            char code = 1;
+            send(client_sock, &code, 1, 0);
+            printf("s> UNREGISTER %s FAIL\n", username);
+        }
+
+        pthread_mutex_unlock(&users_mutex);
+
+    } else if (strcmp(operation, "CONNECT") == 0) {
+        char username[50];
+        char port_str[20];
+
+        recv_string(client_sock, username);
+        recv_string(client_sock, port_str);
+
+        int port = atoi(port_str);
+        pthread_mutex_lock(&users_mutex);
+        int idx = find_user(username);
+
+        if (idx == -1) {
+            // Usuario no existe
+            char code = 1;
+            send(client_sock, &code, 1, 0);
+            printf("s> CONNECT %s FAIL\n", username);
+
+        } else if (users[idx].connected) {
+            // Ya conectado
+            char code = 2;
+            send(client_sock, &code, 1, 0);
+            printf("s> CONNECT %s FAIL\n", username);
+
+        } else {
+            // Conectar usuario, obtener IP de cliente
+            struct sockaddr_in addr;
+            socklen_t len = sizeof(addr);
+            if (getpeername(client_sock, (struct sockaddr *)&addr, &len) == 0) {
+                inet_ntop(AF_INET, &addr.sin_addr, users[idx].ip, INET_ADDRSTRLEN);
+            } else {
+                strcpy(users[idx].ip, "unknown");
+            }
+
+            users[idx].port = port;
+            users[idx].connected = 1;
+
+            char code = 0;
+            send(client_sock, &code, 1, 0);
+            printf("s> CONNECT %s OK\n", username);
+        }
+
+        pthread_mutex_unlock(&users_mutex);
+    } else if (strcmp(operation, "DISCONNECT") == 0) {
+        char username[50];
+        recv_string(client_sock, username);
+        pthread_mutex_lock(&users_mutex);
+        int idx = find_user(username);
+
+        if (idx == -1) {
+            // Usuario no existe
+            char code = 1;
+            send(client_sock, &code, 1, 0);
+            printf("s> DISCONNECT %s FAIL\n", username);
+
+        } else if (!users[idx].connected) {
+            // Usuario existe pero no conectado
+            char code = 2;
+            send(client_sock, &code, 1, 0);
+            printf("s> DISCONNECT %s FAIL\n", username);
+
+        } else {
+            // Limpiar datos de conexión de usuario qeu estaba conectado
+            users[idx].connected = 0;
+            users[idx].port = 0;
+            users[idx].ip[0] = '\0';
+
+            char code = 0;
+            send(client_sock, &code, 1, 0);
+            printf("s> DISCONNECT %s OK\n", username);
+        }
+
+        pthread_mutex_unlock(&users_mutex);
+    } else {
+        // si otra operación desconocida
+        printf("s> UNKNOWN OPERATION\n");
+    }   
+
+    close(client_sock);
+    return NULL;
+}
+
+// main
+int main(int argc, char *argv[]) {
+
+    if (argc != 3 || strcmp(argv[1], "-p") != 0) {
+        printf("Usage: %s -p <port>\n", argv[0]);
+        exit(1);
+    }
+
+    int port = atoi(argv[2]);
+
+    int server_fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (server_fd < 0) {
+        perror("Socket error");
+        exit(1);
+    }
+
+    struct sockaddr_in address;
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = INADDR_ANY;
+    address.sin_port = htons(port);
+
+    if (bind(server_fd, (struct sockaddr *)&address, sizeof(address)) < 0) {
+        perror("Bind error");
+        exit(1);
+    }
+
+    if (listen(server_fd, 10) < 0) {
+        perror("Listen error");
+        exit(1);
+    }
+
+    printf("s> init server 0.0.0.0:%d\n", port);
+    printf("s>\n");
+
+    while (1) {
+        struct sockaddr_in client_addr;
+        socklen_t addr_len = sizeof(client_addr);
+
+        int client_sock = accept(server_fd, (struct sockaddr *)&client_addr, &addr_len);
+        if (client_sock < 0) {
+            perror("Accept error");
+            continue;
+        }
+
+        // Crear hilo
+        pthread_t thread;
+        int *pclient = malloc(sizeof(int));
+        *pclient = client_sock;
+
+        pthread_create(&thread, NULL, handle_client, pclient);
+        pthread_detach(thread);
+    }
+
+    close(server_fd);
+    return 0;
+}
