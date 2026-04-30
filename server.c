@@ -8,6 +8,12 @@
 #define BUFFER_SIZE 1024
 #define MAX_USERS 100
 
+typedef struct {
+    char sender[50];
+    char text[BUFFER_SIZE];
+    unsigned int id;
+} Message;
+
 // información del usuario
 typedef struct {
     char username[50];
@@ -20,16 +26,9 @@ typedef struct {
     unsigned int last_msg_id; // contador por user
 } User;
 
-typedef struct {
-    char sender[50];
-    char text[BUFFER_SIZE];
-    unsigned int id;
-} Message;
-
-// Lista global de usuarios
+// Lista de usuarios
 User users[MAX_USERS];
 int num_users = 0;
-unsigned int global_msg_id = 0;
 
 // Mutex para evitar problemas entre hilos
 pthread_mutex_t users_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -293,10 +292,10 @@ void *handle_client(void *arg) {
 
             // Enviar ID como string terminado en \0
             char id_str[20];
-            sprintf(id_str, "%u", global_msg_id);
+            sprintf(id_str, "%u", msg_id);
             send(client_sock, id_str, strlen(id_str) + 1, 0);
 
-            printf("s> SEND MESSAGE %u FROM %s TO %s\n", global_msg_id, sender, receiver);
+            printf("s> SEND MESSAGE %u FROM %s TO %s\n", msg_id, sender, receiver);
 
             // Enviar mensaje a receptor si está conectado
             if (users[receiver_idx].connected) {
@@ -311,13 +310,15 @@ void *handle_client(void *arg) {
                 if (connect(sock_dest, (struct sockaddr *)&dest_addr, sizeof(dest_addr)) == 0) {
 
                     //enviar protocolo servidor-cliente
-                    send(sock_dest, "SEND_MESSAGE\0", strlen("SEND_MESSAGE") + 1, 0);
+                    send(sock_dest, "SEND MESSAGE\0", strlen("SEND MESSAGE") + 1, 0);
                     send(sock_dest, sender, strlen(sender) + 1, 0);
 
                     char id_str2[20];
-                    sprintf(id_str2, "%u", global_msg_id);
+                    sprintf(id_str2, "%u", msg_id);
                     send(sock_dest, id_str2, strlen(id_str2) + 1, 0);
                     send(sock_dest, message, strlen(message) + 1, 0);
+
+                    recv_user->num_pending--;
                 }
                 close(sock_dest);
 
@@ -331,10 +332,10 @@ void *handle_client(void *arg) {
                     inet_pton(AF_INET, users[sender_idx].ip, &sender_addr.sin_addr);
 
                     if (connect(sock_sender, (struct sockaddr *)&sender_addr, sizeof(sender_addr)) == 0) {
-                        send(sock_sender, "SEND_MESS_ACK\0", strlen("SEND_MESS_ACK") + 1, 0);
+                        send(sock_sender, "SEND MESS ACK\0", strlen("SEND MESS ACK") + 1, 0);
 
                         char id_str3[20];
-                        sprintf(id_str3, "%u", global_msg_id);
+                        sprintf(id_str3, "%u", msg_id);
                         send(sock_sender, id_str3, strlen(id_str3) + 1, 0);
                     }
                     close(sock_sender);

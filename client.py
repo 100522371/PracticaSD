@@ -51,7 +51,7 @@ class Client :
         return result.decode()
  
     # *
-    # * @brief Hilo que escucha mensajes entrantes del servidor (SEND_MESSAGE y SEND_MESS_ACK).
+    # * @brief Hilo que escucha mensajes entrantes del servidor (SEND MESSAGE y SEND MESS ACK).
     # *        Se ejecuta mientras el usuario esté conectado.
     # * @param listen_sock - socket en escucha donde el servidor se conectará
     @staticmethod
@@ -74,7 +74,7 @@ class Client :
                 # Leemos la operación que nos envía el servidor
                 operacion = Client._recv_string(conn)
                 
-                if operacion == "SEND_MESSAGE":
+                if operacion == "SEND MESSAGE":
                     # El servidor nos entrega un mensaje de otro usuario
                     # Protocolo sección 8.6:
                     #   cadena: remitente
@@ -88,7 +88,7 @@ class Client :
                     print("  END")
                     print("c> ", end="", flush=True)  # Restauramos el prompt
  
-                elif operacion == "SEND_MESS_ACK":
+                elif operacion == "SEND MESS ACK":
                     # El servidor nos notifica que un mensaje que enviamos fue entregado
                     # Protocolo sección 8.6 (notificación al remitente):
                     #   cadena: id del mensaje entregado
