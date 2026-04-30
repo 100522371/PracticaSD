@@ -19,6 +19,7 @@ typedef struct {
 // Lista global de usuarios
 User users[MAX_USERS];
 int num_users = 0;
+unsigned int global_msg_id = 0;
 
 // Mutex para evitar problemas entre hilos
 pthread_mutex_t users_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -212,6 +213,42 @@ void *handle_client(void *arg) {
         }
 
         pthread_mutex_unlock(&users_mutex);
+
+    } else if (strcmp(operation, "SEND") == 0) {
+        char sender[50];
+        char receiver[50];
+        char message[BUFFER_SIZE];
+
+        recv_string(client_sock, sender);
+        recv_string(client_sock, receiver);
+        recv_string(client_sock, message);
+
+        pthread_mutex_lock(&users_mutex);
+
+        int sender_idx = find_user(sender);
+        int receiver_idx = find_user(receiver);
+
+        if (sender_idx == -1 || receiver_idx == -1) {
+            // o emisor o remitente no existen
+            char code = 1;
+            send(client_sock, &code, 1, 0);
+            printf("s> SEND FAIL\n");
+
+        } else {
+            // Generar ID
+            global_msg_id++;
+            char code = 0;
+            send(client_sock, &code, 1, 0);
+
+            // Enviar ID como string terminado en \0
+            char id_str[20];
+            sprintf(id_str, "%u", global_msg_id);
+            send(client_sock, id_str, strlen(id_str) + 1, 0);
+
+            printf("s> SEND MESSAGE %u FROM %s TO %s\n", global_msg_id, sender, receiver);
+        }
+        pthread_mutex_unlock(&users_mutex);
+        
     } else {
         // si otra operación desconocida
         printf("s> UNKNOWN OPERATION\n");
