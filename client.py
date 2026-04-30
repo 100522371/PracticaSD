@@ -111,15 +111,15 @@ class Client :
     def  register(user) :
         sock = Client.connectToServer()
         # Protocolo sección 8.1: enviamos "REGISTER\0" + nombre\0
-        sock.sendall(f"REGISTER\n".encode())
+        sock.sendall(("REGISTER\0").encode())
         sock.sendall((user + "\0").encode())    
-        respuesta = sock.recv(1).decode().strip()
+        respuesta = sock.recv(1)
         sock.close()
         codigo = respuesta[0]
-        if codigo == "0":
+        if codigo == 0:
             print("REGISTER OK")
             return Client.RC.OK
-        elif codigo == "1":
+        elif codigo == 1:
             print("USERNAME IN USE")
             return Client.RC.USER_ERROR
         else:
@@ -138,13 +138,13 @@ class Client :
         # Protocolo sección 8.2: enviamos "UNREGISTER\0" + nombre\0
         sock.sendall(f"UNREGISTER\0".encode())
         sock.sendall((user + "\0").encode())
-        respuesta = sock.recv(1).decode().strip()
+        respuesta = sock.recv(1)
         sock.close()
         codigo = respuesta[0]
-        if codigo == "0":
+        if codigo == 0:
             print("UNREGISTER OK")
             return Client.RC.OK
-        elif codigo == "1":
+        elif codigo == 1:
             print("USER DOES NOT EXIST")
             return Client.RC.USER_ERROR
         else:
@@ -178,22 +178,22 @@ class Client :
         sock.sendall(f"CONNECT\0".encode())
         sock.sendall((user + "\0").encode())
         sock.sendall((str(puerto_asignado) + "\0").encode())
-        respuesta = sock.recv(1).decode().strip()
+        respuesta = sock.recv(1)
         sock.close()
         
         codigo = respuesta[0]
-        if codigo == "0":
+        if codigo == 0:
             # Guardamos el socket en la clase para poder cerrarlo luego en el disconnect
             Client._socket = listen_sock
             # Guardamos el usuario conectado en la clase para usarlo en send y users
             Client._current_user = user
             print("CONNECT OK")
             return Client.RC.OK
-        elif codigo == "1":
+        elif codigo == 1:
             listen_sock.close()
             print("CONNECT FAIL, USER DOES NOT EXIST")
             return Client.RC.USER_ERROR
-        elif codigo == "2":
+        elif codigo == 2:
             listen_sock.close()
             print("USER ALREADY CONNECTED")
             return Client.RC.USER_ERROR
@@ -261,7 +261,7 @@ class Client :
         sock = Client.connectToServer()
         sock.sendall(("DISCONNECT\0").encode())
         sock.sendall((user + "\0").encode())
-        respuesta = sock.recv(1).decode().strip()
+        respuesta = sock.recv(1)
         sock.close()
  
         # Cerramos el socket de escucha local para detener el hilo
