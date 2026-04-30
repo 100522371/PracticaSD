@@ -292,6 +292,45 @@ void *handle_client(void *arg) {
         }
         pthread_mutex_unlock(&users_mutex);
 
+    } else if (strcmp(operation, "USERS") == 0) {
+        char requester[50];
+        recv_string(client_sock, requester);
+        pthread_mutex_lock(&users_mutex);
+        int idx = find_user(requester);
+
+        if (idx == -1 || !users[idx].connected) {
+            // Usuario no exist o no está conectado
+            char code = 1;
+            send(client_sock, &code, 1, 0);
+            printf("s> USERS FAIL\n");
+
+        } else {
+            // Contamos usuarios conectados
+            int count = 0;
+            for (int i = 0; i < num_users; i++) {
+                if (users[i].connected) {
+                    count++;
+                }
+            }
+
+            char code = 0;
+            send(client_sock, &code, 1, 0);
+
+            // Enviar número de usuarios como string
+            char count_str[10];
+            sprintf(count_str, "%d", count);
+            send(client_sock, count_str, strlen(count_str) + 1, 0);
+
+            // Enviar nombres
+            for (int i = 0; i < num_users; i++) {
+                if (users[i].connected) {
+                    send(client_sock, users[i].username, strlen(users[i].username) + 1, 0);
+                }
+            }
+            printf("s> USERS OK\n");
+        }
+        pthread_mutex_unlock(&users_mutex);
+
     } else {
         // si otra operación 
         printf("s> UNKNOWN OPERATION\n");
