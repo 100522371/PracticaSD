@@ -246,11 +246,35 @@ void *handle_client(void *arg) {
             send(client_sock, id_str, strlen(id_str) + 1, 0);
 
             printf("s> SEND MESSAGE %u FROM %s TO %s\n", global_msg_id, sender, receiver);
+
+            // Enviar mensaje a receptor si está conectado
+            if (users[receiver_idx].connected) {
+
+                int sock_dest = socket(AF_INET, SOCK_STREAM, 0);
+
+                struct sockaddr_in dest_addr;
+                dest_addr.sin_family = AF_INET;
+                dest_addr.sin_port = htons(users[receiver_idx].port);
+                inet_pton(AF_INET, users[receiver_idx].ip, &dest_addr.sin_addr);
+
+                if (connect(sock_dest, (struct sockaddr *)&dest_addr, sizeof(dest_addr)) == 0) {
+
+                    //enviar protocolo servidor-cliente
+                    send(sock_dest, "SEND_MESSAGE\0", strlen("SEND_MESSAGE") + 1, 0);
+                    send(sock_dest, sender, strlen(sender) + 1, 0);
+
+                    char id_str2[20];
+                    sprintf(id_str2, "%u", global_msg_id);
+                    send(sock_dest, id_str2, strlen(id_str2) + 1, 0);
+                    send(sock_dest, message, strlen(message) + 1, 0);
+                }
+                close(sock_dest);
+            }
         }
         pthread_mutex_unlock(&users_mutex);
-        
+
     } else {
-        // si otra operación desconocida
+        // si otra operación 
         printf("s> UNKNOWN OPERATION\n");
     }   
 
