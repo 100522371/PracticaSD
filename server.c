@@ -14,7 +14,17 @@ typedef struct {
     char ip[INET_ADDRSTRLEN];
     int port;
     int connected; // 0 desconectado, 1 conectado
+
+    Message pending[100];
+    int num_pending;
+    unsigned int last_msg_id; // contador por user
 } User;
+
+typedef struct {
+    char sender[50];
+    char text[BUFFER_SIZE];
+    unsigned int id;
+} Message;
 
 // Lista global de usuarios
 User users[MAX_USERS];
@@ -105,6 +115,8 @@ void *handle_client(void *arg) {
             users[num_users].connected = 0;
             users[num_users].port = 0;
             users[num_users].ip[0] = '\0';
+            users[num_users].num_pending = 0;
+            users[num_users].last_msg_id = 0;
 
             num_users++;
             char code = 0;
@@ -180,6 +192,35 @@ void *handle_client(void *arg) {
             char code = 0;
             send(client_sock, &code, 1, 0);
             printf("s> CONNECT %s OK\n", username);
+
+            // Enviar mensajes pendientes
+            User *u = &users[idx];
+
+            for (int i = 0; i < u->num_pending; i++) {
+                int sock_dest = socket(AF_INET, SOCK_STREAM, 0);
+
+                struct sockaddr_in dest_addr;
+                dest_addr.sin_family = AF_INET;
+                dest_addr.sin_port = htons(u->port);
+                inet_pton(AF_INET, u->ip, &dest_addr.sin_addr);
+
+                if (connect(sock_dest, (struct sockaddr *)&dest_addr, sizeof(dest_addr)) == 0) {
+
+                    send(sock_dest, "SEND MESSAGE\0", strlen("SEND MESSAGE") + 1, 0);
+                    send(sock_dest, u->pending[i].sender, strlen(u->pending[i].sender) + 1, 0);
+
+                    char id_str[20];
+                    sprintf(id_str, "%u", u->pending[i].id);
+                    send(sock_dest, id_str, strlen(id_str) + 1, 0);
+                    send(sock_dest, u->pending[i].text, strlen(u->pending[i].text) + 1, 0);
+                    printf("s> SEND MESSAGE %u FROM %s TO %s\n", u->pending[i].id, u->pending[i].sender, username);
+                }
+
+                close(sock_dest);
+            }
+
+            // Vaciar cola
+            u->num_pending = 0;
         }
 
         pthread_mutex_unlock(&users_mutex);
@@ -235,8 +276,18 @@ void *handle_client(void *arg) {
             printf("s> SEND FAIL\n");
 
         } else {
-            // Generar ID
-            global_msg_id++;
+            // Contador por usuario
+            users[sender_idx].last_msg_id++;
+            unsigned int msg_id = users[sender_idx].last_msg_id;
+
+            Message m;
+            strcpy(m.sender, sender);
+            strcpy(m.text, message);
+            m.id = msg_id;
+
+            User *recv_user = &users[receiver_idx];
+            recv_user->pending[recv_user->num_pending++] = m;
+
             char code = 0;
             send(client_sock, &code, 1, 0);
 
