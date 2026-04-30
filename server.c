@@ -194,8 +194,10 @@ void *handle_client(void *arg) {
 
             // Enviar mensajes pendientes
             User *u = &users[idx];
+            int new_count = 0;
 
             for (int i = 0; i < u->num_pending; i++) {
+                int enviado = 0;
                 int sock_dest = socket(AF_INET, SOCK_STREAM, 0);
 
                 struct sockaddr_in dest_addr;
@@ -205,6 +207,7 @@ void *handle_client(void *arg) {
 
                 if (connect(sock_dest, (struct sockaddr *)&dest_addr, sizeof(dest_addr)) == 0) {
 
+                    //Enviar mensaje
                     send(sock_dest, "SEND MESSAGE\0", strlen("SEND MESSAGE") + 1, 0);
                     send(sock_dest, u->pending[i].sender, strlen(u->pending[i].sender) + 1, 0);
 
@@ -212,14 +215,46 @@ void *handle_client(void *arg) {
                     sprintf(id_str, "%u", u->pending[i].id);
                     send(sock_dest, id_str, strlen(id_str) + 1, 0);
                     send(sock_dest, u->pending[i].text, strlen(u->pending[i].text) + 1, 0);
+
                     printf("s> SEND MESSAGE %u FROM %s TO %s\n", u->pending[i].id, u->pending[i].sender, username);
+                    enviado = 1;
+
+                    //Añadir ACK al emisor
+                    int sender_idx = find_user(u->pending[i].sender);
+
+                    if (sender_idx != -1 && users[sender_idx].connected) {
+
+                        int sock_sender = socket(AF_INET, SOCK_STREAM, 0);
+                        struct sockaddr_in sender_addr;
+                        sender_addr.sin_family = AF_INET;
+                        sender_addr.sin_port = htons(users[sender_idx].port);
+                        inet_pton(AF_INET, users[sender_idx].ip, &sender_addr.sin_addr);
+
+                        if (connect(sock_sender, (struct sockaddr *)&sender_addr, sizeof(sender_addr)) == 0) {
+
+                            send(sock_sender, "SEND MESS ACK\0", strlen("SEND MESS ACK") + 1, 0);
+                            char id_str_ack[20];
+                            sprintf(id_str_ack, "%u", u->pending[i].id);
+                            send(sock_sender, id_str_ack, strlen(id_str_ack) + 1, 0);
+                        }
+                        close(sock_sender);
+                    }
+
+                } else {
+                    //Si falla marcar como desconectado
+                    users[idx].connected = 0;
                 }
 
                 close(sock_dest);
+
+                //Mantenemos los mensajes no enviados
+                if (!enviado) {
+                    u->pending[new_count++] = u->pending[i];
+                }
             }
 
-            // Vaciar cola
-            u->num_pending = 0;
+            // Actualizar cola
+            u->num_pending = new_count;
         }
 
         pthread_mutex_unlock(&users_mutex);
@@ -287,6 +322,11 @@ void *handle_client(void *arg) {
             User *recv_user = &users[receiver_idx];
             recv_user->pending[recv_user->num_pending++] = m;
 
+            //Si el receptor está desconectado, el mensaje queda alamacenado
+            if (!users[receiver_idx].connected) {
+                printf("s> MESSAGE %u FROM %s TO %s STORED\n", msg_id, sender, receiver);
+            }
+
             char code = 0;
             send(client_sock, &code, 1, 0);
 
@@ -319,6 +359,11 @@ void *handle_client(void *arg) {
                     send(sock_dest, message, strlen(message) + 1, 0);
 
                     recv_user->num_pending--;
+                } else {
+                    //si falla conexión a receptor, consideramos desconectado
+                    users[receiver_idx].connected = 0;
+                    users[receiver_idx].port = 0;
+                    users[receiver_idx].ip[0] = '\0';
                 }
                 close(sock_dest);
 
@@ -354,7 +399,7 @@ void *handle_client(void *arg) {
             // Usuario no exist o no está conectado
             char code = 1;
             send(client_sock, &code, 1, 0);
-            printf("s> USERS FAIL\n");
+            printf("s> CONNECTEDUSERS FAIL\n");
 
         } else {
             // Contamos usuarios conectados
@@ -379,7 +424,7 @@ void *handle_client(void *arg) {
                     send(client_sock, users[i].username, strlen(users[i].username) + 1, 0);
                 }
             }
-            printf("s> USERS OK\n");
+            printf("s> CONNECTEDUSERS OK\n");
         }
         pthread_mutex_unlock(&users_mutex);
 
