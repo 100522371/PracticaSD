@@ -310,8 +310,12 @@ class Client :
         sock.sendall(("SEND\0").encode())
         sock.sendall((Client._current_user + "\0").encode())
         sock.sendall((user + "\0").encode())
+        
+        # Normalizamos el mensaje usando el servicio web
+        normalized_message = Client.normalize_message(message)
         # El mensaje no puede superar 255 caracteres útiles (256 con el '\0')
-        mensaje_truncado = message[:255]
+        mensaje_truncado = normalized_message[:255]
+        
         sock.sendall((mensaje_truncado + "\0").encode())
  
         # Recibimos el código de resultado (1 byte)
@@ -445,6 +449,23 @@ class Client :
         Client._port = args.p
 
         return True
+
+    @staticmethod
+    def normalize_message(message):
+        try:
+            import requests
+            url = "http://127.0.0.1:8080/normalize"
+            response = requests.post(url, data=message)
+
+            if response.status_code == 200:
+                return response.text
+            else:
+                print("ERROR: Web service failed")
+                return message
+        
+        except Exception as e:
+            print(f"ERROR calling web service: {e}")
+            return message
 
     # ******************** MAIN *********************
     @staticmethod
