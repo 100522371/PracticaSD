@@ -95,6 +95,18 @@ class Client :
                     msg_id = Client._recv_string(conn)
                     print(f"\nc> SEND MESSAGE {msg_id} OK")
                     print("c> ", end="", flush=True)
+
+                elif operacion == "SEND MESSAGE ATTACH":
+                    remitente = Client._recv_string(conn)
+                    msg_id    = Client._recv_string(conn)
+                    mensaje   = Client._recv_string(conn)
+                    filename  = Client._recv_string(conn)
+
+                    print(f"\ns> MESSAGE {msg_id} FROM {remitente}")
+                    print(f"  {mensaje}")
+                    print("  END")
+                    print(f"  FILE {filename}")
+                    print("c> ", end="", flush=True)
  
             except Exception as e:
                 print(f"\nError en hilo de escucha: {e}")

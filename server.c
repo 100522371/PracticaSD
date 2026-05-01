@@ -12,6 +12,9 @@ typedef struct {
     char sender[50];
     char text[BUFFER_SIZE];
     unsigned int id;
+
+    int has_attachment;     // 0 = SEND normal, 1= SENDATTACH
+    char fileName[256];     // Nombre fichero adjunto
 } Message;
 
 // información del usuario
@@ -324,6 +327,8 @@ void *handle_client(void *arg) {
             strcpy(m.sender, sender);
             strcpy(m.text, message);
             m.id = msg_id;
+            m.has_attachment = 0;
+            m.fileName[0] = '\0';
 
             User *recv_user = &users[receiver_idx];
             //controlar overflow
@@ -400,6 +405,98 @@ void *handle_client(void *arg) {
                 }
             }
         }
+        pthread_mutex_unlock(&users_mutex);
+
+    } else if (strcmp(operation, "SENDATTACH") == 0) {
+        char sender[50];
+        char receiver[50];
+        char message[BUFFER_SIZE];
+        char filename[256];
+
+        recv_string(client_sock, sender);
+        recv_string(client_sock, receiver);
+        recv_string(client_sock, message);
+        recv_string(client_sock, filename);
+
+        pthread_mutex_lock(&users_mutex);
+
+        int sender_idx = find_user(sender);
+        int receiver_idx = find_user(receiver);
+
+        if (sender_idx == -1 || receiver_idx == -1) {
+            char code = 1;
+            send(client_sock, &code, 1, 0);
+            printf("s> SENDATTACH FAIL\n");
+
+        } else {
+
+            // generamos ID
+            users[sender_idx].last_msg_id++;
+            unsigned int msg_id = users[sender_idx].last_msg_id;
+
+            // crear el mensaje
+            Message m;
+            strcpy(m.sender, sender);
+            strcpy(m.text, message);
+            m.id = msg_id;
+            m.has_attachment = 1;
+            strcpy(m.fileName, filename);
+
+            // guardar en pendientes
+            User *recv_user = &users[receiver_idx];
+            if (recv_user->num_pending < 100) {
+                recv_user->pending[recv_user->num_pending++] = m;
+            }
+
+            // almacenar si está desconectado
+            if (!users[receiver_idx].connected) {
+                printf("s> MESSAGE %u FROM %s TO %s STORED\n", msg_id, sender, receiver);
+            }
+
+            char code = 0;
+            send(client_sock, &code, 1, 0);
+
+            char id_str[20];
+            sprintf(id_str, "%u", msg_id);
+            send(client_sock, id_str, strlen(id_str) + 1, 0);
+
+            printf("s> SENDATTACH MESSAGE %u FROM %s TO %s FILE %s\n",
+                msg_id, sender, receiver, filename);
+
+            if (users[receiver_idx].connected) {
+                int sock_dest = socket(AF_INET, SOCK_STREAM, 0);
+                struct sockaddr_in dest_addr;
+                dest_addr.sin_family = AF_INET;
+                dest_addr.sin_port = htons(users[receiver_idx].port);
+                inet_pton(AF_INET, users[receiver_idx].ip, &dest_addr.sin_addr);
+
+                if (connect(sock_dest, (struct sockaddr *)&dest_addr, sizeof(dest_addr)) == 0) {
+
+                    send(sock_dest, "SEND MESSAGE ATTACH\0", strlen("SEND MESSAGE ATTACH") + 1, 0);
+                    send(sock_dest, sender, strlen(sender) + 1, 0);
+
+                    char id_str2[20];
+                    sprintf(id_str2, "%u", msg_id);
+                    send(sock_dest, id_str2, strlen(id_str2) + 1, 0);
+                    send(sock_dest, message, strlen(message) + 1, 0);
+                    send(sock_dest, filename, strlen(filename) + 1, 0);
+
+                    //Eliminamos el mensaje de pendientes
+                    for (int j = 0; j < recv_user->num_pending - 1; j++) {
+                        recv_user->pending[j] = recv_user->pending[j + 1];
+                    }
+                    recv_user->num_pending--;
+
+                } else {
+                    //marcar como desconectado si falla
+                    users[receiver_idx].connected = 0;
+                    users[receiver_idx].port = 0;
+                    users[receiver_idx].ip[0] = '\0';
+                }
+                close(sock_dest);
+            }    
+        }
+
         pthread_mutex_unlock(&users_mutex);
 
     } else if (strcmp(operation, "USERS") == 0) {
