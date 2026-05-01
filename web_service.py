@@ -23,10 +23,10 @@ class MessageService(BaseHTTPRequestHandler):
 
         self.wfile.write(normalized.encode())
 
-    def run():
+def run():
         server = HTTPServer(('127.0.0.1', 8080), MessageService)
         print("Servicio web escuchando en http://127.0.0.1:8080")
-        server.serve_forever()
+        server.serve_forever()    
 
-    if __name__ == "__main__":
+if __name__ == "__main__":
         run()
