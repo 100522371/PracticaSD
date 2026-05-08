@@ -384,7 +384,6 @@ void *handle_client(void *arg) {
         recv_string(client_sock, receiver);
         recv_string(client_sock, message);
         recv_string(client_sock, filename);
-        printf("DEBUG: SENDATTACH from %s to %s FILE %s\n", username, receiver, filename);
 
         int sender_idx = find_user(username);
         int receiver_idx = find_user(receiver);

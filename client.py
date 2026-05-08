@@ -1,5 +1,6 @@
 from enum import Enum
 import argparse
+import os
 import sys
 import socket
 import threading
@@ -135,35 +136,32 @@ class Client :
                     user = Client._recv_string(conn)
                     filename = Client._recv_string(conn)
                     print(f"\nc> GETFILE {filename} REQUEST FROM {user}")
+                    print("c> ", end="", flush=True)
 
-                    # obtenemos su ip y puerto de escucha
-                    for i in Client._usuarios:
-                        if i[0] == user:
-                            ip = i[1]
-                            puerto = int(i[2])
-                    
-                    if ip is None or puerto is None:
-                        print(f"c> FILE TRANSFER FAILED, user not connected")
-                        return Client.RC.USER_ERROR
-                    try:
-                        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                        sock.connect((ip, puerto))
-                    except Exception as e:
-                        print(f"c> FILE TRANSFER FAILED, could not connect to user {user}: {e}")
-                        return Client.RC.ERROR
-                    
                     # Enviamos el contenido del archivo
+                    # por chunks para evitar problemas con archivos grandes
                     try:
-                        with open(filename, 'r') as f:
-                            file_content = f.read()
-                        sock.sendall((file_content + "\0").encode())
-                        print(f"c> FILE {filename} SENT TO {user}")
+                        # Enviamos el tamaño en bytes del archivo
+                        file_size = os.path.getsize(filename)
+                        conn.sendall(f"{file_size}\0".encode())
+
+                        with open(filename, 'rb') as f:
+                            while True:
+                                chunk = f.read(1024)
+                                if not chunk:
+                                    break # FIN
+                                conn.sendall(chunk)
+                        
+                        print(f"\nc> FILE {filename} SENT TO {user}")
+                        print("c> ", end="", flush=True)
                     except Exception as e:
-                        print(f"c> FILE TRANSFER FAILED, could not send file {filename} to user {user}: {e}")
-                        return Client.RC.ERROR
+                        print(f"\nc> FILE TRANSFER FAILED, could not send file {filename} to user {user}: {e}")
+                        print("c> ", end="", flush=True)
+                    conn.close()
 
             except Exception as e:
                 print(f"\nError en hilo de escucha: {e}")
+                print("c> ", end="", flush=True)
             finally:
                 conn.close()
 
@@ -299,6 +297,7 @@ class Client :
             
             # Recibimos una cadena por usuario
             # sendattach: usuario :: ip :: puerto
+            Client._usuarios = []
             for _ in range(num_usuarios):
                 cadena = Client._recv_string(sock)
                 usuario, ip, puerto = cadena.split("::")
@@ -417,19 +416,13 @@ class Client :
         # "SENDATTACH\0" + remitente\0 + destinatario\0 + mensaje\0 + filename\0
         sock.sendall(("SENDATTACH\0").encode())
         sock.sendall((Client._current_user + "\0").encode())
-        print(f"DEBUG: Sent remitente")
-
         sock.sendall((user + "\0").encode())
-        print(f"DEBUG: Sent user={user}")
-
         # Normalizamos el mensaje usando el servicio web
         normalized_message = Client.normalize_message(message)
         # Truncamos el mensaje a 255 caracteres para evitar problemas de tamaño
         mensaje_truncado = normalized_message[:255]
         sock.sendall((mensaje_truncado + "\0").encode())
-        print(f"DEBUG: Sent message={mensaje_truncado}")
         sock.sendall((file + "\0").encode())
-        print(f"DEBUG: Sent filename={file}")
 
         # Recibimos el código de resultado (1 byte)
         respuesta = sock.recv(1)
@@ -463,12 +456,28 @@ class Client :
             print("c> ERROR: NOT CONNECTED")
             return Client.RC.USER_ERROR
         
-        Client.users()  # Actualizamos la lista de usuarios conectados
-        for i in Client._usuarios:
-            if i[0] == user:
-                ip = i[1]
-                puerto = int(i[2])
-        if ip is None or puerto is None:
+        ip = None
+        puerto = None
+
+        # Primer intento
+        for u in Client._usuarios:
+            if u[0] == user:
+                ip = u[1]
+                puerto = int(u[2])
+                break
+
+        # Si no se encuentra, actualizar y reintentar
+        if ip is None:
+            print("c> User not found, refreshing user list...")
+            Client.users()  # Actualizamos la lista de usuarios
+        for u in Client._usuarios:
+            if u[0] == user:
+                ip = u[1]
+                puerto = int(u[2])
+                break
+
+        # Si después del reintento sigue sin encontrarse
+        if ip is None:
             print("c> FILE TRANSFER FAILED, user not connected")
             return Client.RC.USER_ERROR
         
@@ -477,25 +486,44 @@ class Client :
             sock.connect((ip, puerto))
         except Exception as e:
             print(f"c> FILE TRANSFER FAILED, could not connect to user {user}: {e}")
+            return Client.RC.ERROR
         
-        # Enviamos "GETFILE\0" + filename\0
+        # Enviamos "GETFILE\0" + user\0 + filename\0
         sock.sendall(("GETFILE\0").encode())
         sock.sendall((Client._current_user + "\0").encode())
         sock.sendall((file + "\0").encode())
 
-        # Leemos el contenido del archivo
-        file_content = Client._recv_string(sock)
-        sock.close()
+        # recibimos el tamaño del archivo como cadena
         try:
-            with open(local_file, 'w') as f:
-                f.write(file_content)
-            print(f"c> FILE {file} RECEIVED AND SAVED AS {local_file}")
-            return Client.RC.OK
-        except Exception as e:
-            print(f"c> FILE TRANSFER FAILED, could not save file: {e}")
+            file_size_str = Client._recv_string(sock)
+            file_size = int(file_size_str)
+        except (ValueError, TypeError):
+            print(f"c> FILE TRANSFER FAILED: Invalid file size received.")
+            sock.close()
             return Client.RC.ERROR
-        
-        
+
+        # Leemos el contenido del archivo
+        try:
+            with open(local_file, 'wb') as f:
+                bytes_received = 0
+                while bytes_received < file_size:
+                    chunk = sock.recv(1024)
+                    if not chunk:
+                        break # conexión cerrada antes de recibir todo el archivo
+                    f.write(chunk)
+                    bytes_received += len(chunk)
+            if bytes_received == file_size:
+                print(f"c> FILE {file} RECEIVED AND SAVED AS {local_file}")
+                return Client.RC.OK
+            else:
+                print(f"c> FILE TRANSFER FAILED: Incomplete file")
+                return Client.RC.ERROR
+        except Exception as e:
+            print(f"c> FILE TRANSFER FAILED: {e}")
+            return Client.RC.ERROR
+        finally:
+            sock.close()
+
     # *
     # **
     # * @brief Command interpreter for the client. It calls the protocol functions.
@@ -552,7 +580,6 @@ class Client :
                             # filename sera la ultima palabra, el mensaje todo lo que haya entre el destinatario y la última palabra
                             filename = line[-1]
                             message = ' '.join(line[2:-1])
-                            print(f"DEBUG: user={line[1]}, message={message}, filename={filename}")
                             Client.sendAttach(line[1], message, filename)
                         else :
                             print("Syntax error. Usage: SENDATTACH <userName> <message> <filename>")
