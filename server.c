@@ -93,10 +93,8 @@ void *handle_client(void *arg) {
     char filename[256];
 
     recv_string(client_sock, operation);
-    
-    pthread_mutex_lock(&users_mutex);
     if (strcmp(operation, "REGISTER") == 0) {
-        
+        pthread_mutex_lock(&users_mutex);
         recv_string(client_sock, username);
         if (user_exists(username)) {
             // Usuario ya existe
@@ -116,9 +114,11 @@ void *handle_client(void *arg) {
             send(client_sock, &code, 1, 0);
             printf("s> REGISTER %s FAIL\n", username);
         }
+        pthread_mutex_unlock(&users_mutex);
+
 
     } else if (strcmp(operation, "UNREGISTER") == 0) {
-        
+        pthread_mutex_lock(&users_mutex);
         recv_string(client_sock, username);
         int idx = find_user(username);
         if (idx != -1) {
@@ -139,9 +139,12 @@ void *handle_client(void *arg) {
             send(client_sock, &code, 1, 0);
             printf("s> UNREGISTER %s FAIL\n", username);
         }
-    } else if (strcmp(operation, "CONNECT") == 0) {
-        char port_str[20];
+        pthread_mutex_unlock(&users_mutex);
 
+    } else if (strcmp(operation, "CONNECT") == 0) {
+        pthread_mutex_lock(&users_mutex);
+        
+        char port_str[20];
         recv_string(client_sock, username);
         recv_string(client_sock, port_str);
 
@@ -239,9 +242,11 @@ void *handle_client(void *arg) {
             // Actualizar cola
             u->num_pending = new_count;
         }
+        pthread_mutex_unlock(&users_mutex);
+
 
     } else if (strcmp(operation, "DISCONNECT") == 0) {
-        
+        pthread_mutex_lock(&users_mutex);
         recv_string(client_sock, username);
         int idx = find_user(username);
         if (idx == -1) {
@@ -266,8 +271,11 @@ void *handle_client(void *arg) {
             send(client_sock, &code, 1, 0);
             printf("s> DISCONNECT %s OK\n", username);
         }
+        pthread_mutex_unlock(&users_mutex);
+
 
     } else if (strcmp(operation, "SEND") == 0) {
+        pthread_mutex_lock(&users_mutex);
         char receiver[50];
         char message[BUFFER_SIZE];
 
@@ -364,8 +372,11 @@ void *handle_client(void *arg) {
                 }
             } 
         }
+        pthread_mutex_unlock(&users_mutex);
+
 
     } else if (strcmp(operation, "SENDATTACH") == 0) {
+        pthread_mutex_lock(&users_mutex);
         char receiver[50];
         char message[BUFFER_SIZE];
 
@@ -462,8 +473,11 @@ void *handle_client(void *arg) {
                 }
             }    
         }
+        pthread_mutex_unlock(&users_mutex);
+
 
     } else if (strcmp(operation, "USERS") == 0) {
+        pthread_mutex_lock(&users_mutex);
         recv_string(client_sock, username);
         int idx = find_user(username);
         if (idx == -1) {
@@ -506,6 +520,8 @@ void *handle_client(void *arg) {
             }
             printf("s> CONNECTEDUSERS OK\n");
         }
+        pthread_mutex_unlock(&users_mutex);
+
 
     } else {
         // si otra operación 
@@ -518,8 +534,7 @@ void *handle_client(void *arg) {
     //    filename = filename
     //};
     //log_1(log_data, NULL, NULL);
-
-    pthread_mutex_unlock(&users_mutex);
+    
     close(client_sock);
     return NULL;    
 }

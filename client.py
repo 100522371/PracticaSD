@@ -426,7 +426,7 @@ class Client :
         normalized_message = Client.normalize_message(message)
         # Truncamos el mensaje a 255 caracteres para evitar problemas de tamaño
         mensaje_truncado = normalized_message[:255]
-        sock.sendall((mensaje_truncado).encode())
+        sock.sendall((mensaje_truncado + "\0").encode())
         print(f"DEBUG: Sent message={mensaje_truncado}")
         sock.sendall((file + "\0").encode())
         print(f"DEBUG: Sent filename={file}")
