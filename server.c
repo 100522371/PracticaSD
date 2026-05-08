@@ -5,9 +5,14 @@
 #include <arpa/inet.h>
 #include <pthread.h>
 #include "server.h"
-//#include "log.h"
+#include "log.h"
 
 #define MAX_USERS 100
+
+// Variables globales para RPC
+char *rpc_host;
+CLIENT *rpc_client = NULL;
+pthread_mutex_t rpc_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 // Definición de las variables globales de usuarios
 User users[MAX_USERS];
@@ -83,6 +88,17 @@ int remove_user(char *username) {
     return 0; // si no encontrado
 }
 
+// Función para llamar al servicio de logging RPC
+void call_log_service(log_args log_data) {
+    int result;
+    pthread_mutex_lock(&rpc_mutex);
+    enum clnt_stat stat = log_1(log_data, &result, rpc_client);
+    if (stat != RPC_SUCCESS) {
+        clnt_perror(rpc_client, "RPC call failed");
+    }
+    pthread_mutex_unlock(&rpc_mutex);
+}
+
 // Atender a un cliente
 void *handle_client(void *arg) {
     int client_sock = *(int *)arg;
@@ -91,6 +107,7 @@ void *handle_client(void *arg) {
     char operation[BUFFER_SIZE];
     char username[50];
     char filename[256];
+    filename[0] = '\0'; // Inicializar filename para evitar basura
 
     recv_string(client_sock, operation);
     if (strcmp(operation, "REGISTER") == 0) {
@@ -527,12 +544,13 @@ void *handle_client(void *arg) {
         printf("s> UNKNOWN OPERATION\n");
     }
 
-    //struct log_args log_data = {
-    //    username = username,
-    //    op = operation,
-    //    filename = filename
-    //};
-    //log_1(log_data, NULL, NULL);
+    // Registrar operación en el servidor de logging RPC
+    log_args log_data;
+    log_data.username = username;
+    log_data.op = operation;
+    log_data.filename = filename;
+
+    call_log_service(log_data);
     
     close(client_sock);
     return NULL;    
@@ -566,6 +584,18 @@ int main(int argc, char *argv[]) {
 
     if (listen(server_fd, 10) < 0) {
         perror("Listen error");
+        exit(1);
+    }
+
+    rpc_host = getenv("LOG_RPC_IP");
+    if (rpc_host == NULL) {
+        printf("usage: export LOG_RPC_IP=localhost\n");
+        exit(1);
+    }
+
+    rpc_client = clnt_create(rpc_host, LOGGING, LOGVER, "tcp");
+    if (rpc_client == NULL) {
+        clnt_pcreateerror(rpc_host);
         exit(1);
     }
 
