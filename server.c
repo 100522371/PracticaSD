@@ -4,36 +4,16 @@
 #include <unistd.h>
 #include <arpa/inet.h>
 #include <pthread.h>
+#include "server.h"
+//#include "log.h"
 
-#define BUFFER_SIZE 1024
 #define MAX_USERS 100
 
-typedef struct {
-    char sender[50];
-    char text[BUFFER_SIZE];
-    unsigned int id;
-
-    int has_attachment;     // 0 = SEND normal, 1= SENDATTACH
-    char fileName[256];     // Nombre fichero adjunto
-} Message;
-
-// información del usuario
-typedef struct {
-    char username[50];
-    char ip[INET_ADDRSTRLEN];
-    int port;
-    int connected; // 0 desconectado, 1 conectado
-
-    Message pending[100];
-    int num_pending;
-    unsigned int last_msg_id; // contador por user
-} User;
-
-// Lista de usuarios
+// Definición de las variables globales de usuarios
 User users[MAX_USERS];
 int num_users = 0;
 
-// Mutex para evitar problemas entre hilos
+// Inicialización del mutex global
 pthread_mutex_t users_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 // Función que lee cadenas terminadas en \0
@@ -63,7 +43,7 @@ int user_exists(char *username) {
     return 0;
 }
 
-// devolver índice del user o -1 si no existe
+// Devolver índice del user o -1 si no existe
 int find_user(char *username) {
     for (int i = 0; i < num_users; i++) {
         if (strcmp(users[i].username, username) == 0) {
@@ -73,16 +53,29 @@ int find_user(char *username) {
     return -1;
 }
 
+// Añadir un nuevo usuario
+int add_user(char *username) {
+    if (num_users >= MAX_USERS) {
+        return -1; // Error: Límite de usuarios alcanzado
+    }
+    strcpy(users[num_users].username, username);
+    users[num_users].connected = 0;
+    users[num_users].port = 0;
+    users[num_users].ip[0] = '\0';
+    users[num_users].num_pending = 0;
+    users[num_users].last_msg_id = 0;
+    num_users++;
+    return 0; // Éxito
+}
+
 // Eliminar un usuario del array
 int remove_user(char *username) {
     for (int i = 0; i < num_users; i++) {
         if (strcmp(users[i].username, username) == 0) {
-
             // Desplazar elementos hacia la izda
             for (int j = i; j < num_users - 1; j++) {
                 users[j] = users[j + 1];
             }
-
             num_users--;
             return 1; // si eliminado correctamente
         }
@@ -96,80 +89,63 @@ void *handle_client(void *arg) {
     free(arg);
 
     char operation[BUFFER_SIZE];
+    char username[50];
+    char filename[256];
 
     recv_string(client_sock, operation);
-
+    
+    pthread_mutex_lock(&users_mutex);
     if (strcmp(operation, "REGISTER") == 0) {
-
-        char username[50];
+        
         recv_string(client_sock, username);
-        pthread_mutex_lock(&users_mutex);
-
         if (user_exists(username)) {
             // Usuario ya existe
             char code = 1;
             send(client_sock, &code, 1, 0);
             printf("s> REGISTER %s FAIL\n", username);
 
-        } else if (num_users < MAX_USERS) {
-            // usuario nuevo
-            strcpy(users[num_users].username, username);
-            users[num_users].connected = 0;
-            users[num_users].port = 0;
-            users[num_users].ip[0] = '\0';
-            users[num_users].num_pending = 0;
-            users[num_users].last_msg_id = 0;
-
-            num_users++;
+        }
+        // usuario nuevo
+        int result = add_user(username);
+        if (result == 0) {
             char code = 0;
             send(client_sock, &code, 1, 0);
             printf("s> REGISTER %s OK\n", username);
-
-        } else {
-            // Error 
+        } else { // Error 
             char code = 2;
             send(client_sock, &code, 1, 0);
             printf("s> REGISTER %s FAIL\n", username);
         }
 
-        pthread_mutex_unlock(&users_mutex);
-
     } else if (strcmp(operation, "UNREGISTER") == 0) {
-
-        char username[50];
+        
         recv_string(client_sock, username);
-        pthread_mutex_lock(&users_mutex);
-
         int idx = find_user(username);
         if (idx != -1) {
             //limpiar mensajes pendientes
+            for (int i = 0; i < users[idx].num_pending; i++) {
+                memset(&users[idx].pending[i], 0, sizeof(Message));
+            }
             users[idx].num_pending = 0;
         }
-
         if (remove_user(username)) {
             // Usuario eliminado correctamente
             char code = 0;
             send(client_sock, &code, 1, 0);
             printf("s> UNREGISTER %s OK\n", username);
-
         } else {
             // Usuario no existe
             char code = 1;
             send(client_sock, &code, 1, 0);
             printf("s> UNREGISTER %s FAIL\n", username);
         }
-
-        pthread_mutex_unlock(&users_mutex);
-
     } else if (strcmp(operation, "CONNECT") == 0) {
-        char username[50];
         char port_str[20];
 
         recv_string(client_sock, username);
         recv_string(client_sock, port_str);
 
         int port = atoi(port_str);
-        pthread_mutex_lock(&users_mutex);
         int idx = find_user(username);
 
         if (idx == -1) {
@@ -204,7 +180,6 @@ void *handle_client(void *arg) {
             // Enviar mensajes pendientes
             User *u = &users[idx];
             int new_count = 0;
-
             for (int i = 0; i < u->num_pending; i++) {
                 int enviado = 0;
                 int sock_dest = socket(AF_INET, SOCK_STREAM, 0);
@@ -261,18 +236,14 @@ void *handle_client(void *arg) {
                     u->pending[new_count++] = u->pending[i];
                 }
             }
-
             // Actualizar cola
             u->num_pending = new_count;
         }
 
-        pthread_mutex_unlock(&users_mutex);
     } else if (strcmp(operation, "DISCONNECT") == 0) {
-        char username[50];
+        
         recv_string(client_sock, username);
-        pthread_mutex_lock(&users_mutex);
         int idx = find_user(username);
-
         if (idx == -1) {
             // Usuario no existe
             char code = 1;
@@ -286,7 +257,7 @@ void *handle_client(void *arg) {
             printf("s> DISCONNECT %s FAIL\n", username);
 
         } else {
-            // Limpiar datos de conexión de usuario qeu estaba conectado
+            // Limpiar datos de conexión de usuario que estaba conectado
             users[idx].connected = 0;
             users[idx].port = 0;
             users[idx].ip[0] = '\0';
@@ -296,27 +267,21 @@ void *handle_client(void *arg) {
             printf("s> DISCONNECT %s OK\n", username);
         }
 
-        pthread_mutex_unlock(&users_mutex);
-
     } else if (strcmp(operation, "SEND") == 0) {
-        char sender[50];
         char receiver[50];
         char message[BUFFER_SIZE];
 
-        recv_string(client_sock, sender);
+        recv_string(client_sock, username);
         recv_string(client_sock, receiver);
         recv_string(client_sock, message);
 
-        pthread_mutex_lock(&users_mutex);
-
-        int sender_idx = find_user(sender);
+        int sender_idx = find_user(username);
         int receiver_idx = find_user(receiver);
-
         if (sender_idx == -1 || receiver_idx == -1) {
             // emisor o receptor no existe
             char code = 1;
             send(client_sock, &code, 1, 0);
-            printf("s> SEND FAIL\n");
+            printf("s> SEND FAIL, USER DOES NOT EXIST\n");
 
         } else {
             // Contador por usuario
@@ -324,21 +289,20 @@ void *handle_client(void *arg) {
             unsigned int msg_id = users[sender_idx].last_msg_id;
 
             Message m;
-            strcpy(m.sender, sender);
+            strcpy(m.sender, username);
             strcpy(m.text, message);
             m.id = msg_id;
             m.has_attachment = 0;
             m.fileName[0] = '\0';
 
             User *recv_user = &users[receiver_idx];
-            //controlar overflow
+            // Guardar en pendientes
             if (recv_user->num_pending < 100) {
                 recv_user->pending[recv_user->num_pending++] = m;
             }
-
             //Si el receptor está desconectado, el mensaje queda alamacenado
             if (!users[receiver_idx].connected) {
-                printf("s> MESSAGE %u FROM %s TO %s STORED\n", msg_id, sender, receiver);
+                printf("s> MESSAGE %u FROM %s TO %s STORED\n", msg_id, username, receiver);
             }
 
             char code = 0;
@@ -349,7 +313,7 @@ void *handle_client(void *arg) {
             sprintf(id_str, "%u", msg_id);
             send(client_sock, id_str, strlen(id_str) + 1, 0);
 
-            printf("s> SEND MESSAGE %u FROM %s TO %s\n", msg_id, sender, receiver);
+            printf("s> SEND MESSAGE %u FROM %s TO %s\n", msg_id, username, receiver);
 
             // Enviar mensaje a receptor si está conectado
             if (users[receiver_idx].connected) {
@@ -365,11 +329,9 @@ void *handle_client(void *arg) {
 
                     //enviar protocolo servidor-cliente
                     send(sock_dest, "SEND MESSAGE\0", strlen("SEND MESSAGE") + 1, 0);
-                    send(sock_dest, sender, strlen(sender) + 1, 0);
+                    send(sock_dest, username, strlen(username) + 1, 0);
 
-                    char id_str2[20];
-                    sprintf(id_str2, "%u", msg_id);
-                    send(sock_dest, id_str2, strlen(id_str2) + 1, 0);
+                    send(sock_dest, id_str, strlen(id_str) + 1, 0);
                     send(sock_dest, message, strlen(message) + 1, 0);
 
                     // ELiminamos el mensaje de la cola
@@ -396,47 +358,39 @@ void *handle_client(void *arg) {
 
                     if (connect(sock_sender, (struct sockaddr *)&sender_addr, sizeof(sender_addr)) == 0) {
                         send(sock_sender, "SEND MESS ACK\0", strlen("SEND MESS ACK") + 1, 0);
-
-                        char id_str3[20];
-                        sprintf(id_str3, "%u", msg_id);
-                        send(sock_sender, id_str3, strlen(id_str3) + 1, 0);
+                        send(sock_sender, id_str, strlen(id_str) + 1, 0);
                     }
                     close(sock_sender);
                 }
-            }
+            } 
         }
-        pthread_mutex_unlock(&users_mutex);
 
     } else if (strcmp(operation, "SENDATTACH") == 0) {
-        char sender[50];
         char receiver[50];
         char message[BUFFER_SIZE];
-        char filename[256];
 
-        recv_string(client_sock, sender);
+        recv_string(client_sock, username);
         recv_string(client_sock, receiver);
         recv_string(client_sock, message);
         recv_string(client_sock, filename);
+        printf("DEBUG: SENDATTACH from %s to %s FILE %s\n", username, receiver, filename);
 
-        pthread_mutex_lock(&users_mutex);
-
-        int sender_idx = find_user(sender);
+        int sender_idx = find_user(username);
         int receiver_idx = find_user(receiver);
 
         if (sender_idx == -1 || receiver_idx == -1) {
             char code = 1;
             send(client_sock, &code, 1, 0);
-            printf("s> SENDATTACH FAIL\n");
+            printf("s> SENDATTACH FAIL, USER DOES NOT EXIST\n");
 
         } else {
-
             // generamos ID
             users[sender_idx].last_msg_id++;
             unsigned int msg_id = users[sender_idx].last_msg_id;
 
             // crear el mensaje
             Message m;
-            strcpy(m.sender, sender);
+            strcpy(m.sender, username);
             strcpy(m.text, message);
             m.id = msg_id;
             m.has_attachment = 1;
@@ -447,12 +401,10 @@ void *handle_client(void *arg) {
             if (recv_user->num_pending < 100) {
                 recv_user->pending[recv_user->num_pending++] = m;
             }
-
             // almacenar si está desconectado
             if (!users[receiver_idx].connected) {
-                printf("s> MESSAGE %u FROM %s TO %s STORED\n", msg_id, sender, receiver);
+                printf("s> MESSAGE %u FROM %s TO %s FILE %s STORED\n", msg_id, username, receiver, filename);
             }
-
             char code = 0;
             send(client_sock, &code, 1, 0);
 
@@ -460,8 +412,7 @@ void *handle_client(void *arg) {
             sprintf(id_str, "%u", msg_id);
             send(client_sock, id_str, strlen(id_str) + 1, 0);
 
-            printf("s> SENDATTACH MESSAGE %u FROM %s TO %s FILE %s\n",
-                msg_id, sender, receiver, filename);
+            printf("s> SENDATTACH MESSAGE %u FROM %s TO %s FILE %s\n", msg_id, username, receiver, filename);
 
             if (users[receiver_idx].connected) {
                 int sock_dest = socket(AF_INET, SOCK_STREAM, 0);
@@ -473,11 +424,9 @@ void *handle_client(void *arg) {
                 if (connect(sock_dest, (struct sockaddr *)&dest_addr, sizeof(dest_addr)) == 0) {
 
                     send(sock_dest, "SEND MESSAGE ATTACH\0", strlen("SEND MESSAGE ATTACH") + 1, 0);
-                    send(sock_dest, sender, strlen(sender) + 1, 0);
+                    send(sock_dest, username, strlen(username) + 1, 0);
 
-                    char id_str2[20];
-                    sprintf(id_str2, "%u", msg_id);
-                    send(sock_dest, id_str2, strlen(id_str2) + 1, 0);
+                    send(sock_dest, id_str, strlen(id_str) + 1, 0);
                     send(sock_dest, message, strlen(message) + 1, 0);
                     send(sock_dest, filename, strlen(filename) + 1, 0);
 
@@ -494,17 +443,29 @@ void *handle_client(void *arg) {
                     users[receiver_idx].ip[0] = '\0';
                 }
                 close(sock_dest);
+
+                // Notificar al emisor si está conectado
+                if (users[sender_idx].connected) {
+                    int sock_sender = socket(AF_INET, SOCK_STREAM, 0);
+
+                    struct sockaddr_in sender_addr;
+                    sender_addr.sin_family = AF_INET;
+                    sender_addr.sin_port = htons(users[sender_idx].port);
+                    inet_pton(AF_INET, users[sender_idx].ip, &sender_addr.sin_addr);
+
+                    if (connect(sock_sender, (struct sockaddr *)&sender_addr, sizeof(sender_addr)) == 0) {
+                        send(sock_sender, "SEND MESS ATTACH ACK\0", strlen("SEND MESS ATTACH ACK") + 1, 0);
+                        send(sock_sender, id_str, strlen(id_str) + 1, 0);
+                        send(sock_sender, filename, strlen(filename) + 1, 0);
+                    }
+                    close(sock_sender);
+                }
             }    
         }
 
-        pthread_mutex_unlock(&users_mutex);
-
     } else if (strcmp(operation, "USERS") == 0) {
-        char requester[50];
-        recv_string(client_sock, requester);
-        pthread_mutex_lock(&users_mutex);
-        int idx = find_user(requester);
-
+        recv_string(client_sock, username);
+        int idx = find_user(username);
         if (idx == -1) {
             // Usuario no existe
             char code = 2;
@@ -534,23 +495,33 @@ void *handle_client(void *arg) {
             sprintf(count_str, "%d", count);
             send(client_sock, count_str, strlen(count_str) + 1, 0);
 
-            // Enviar nombres
+            // Enviar cadenas de usuarios conectados
+            // usuario :: ip :: puerto
             for (int i = 0; i < num_users; i++) {
                 if (users[i].connected) {
-                    send(client_sock, users[i].username, strlen(users[i].username) + 1, 0);
+                    char user_info[300];
+                    sprintf(user_info, "%s::%s::%d", users[i].username, users[i].ip, users[i].port);
+                    send(client_sock, user_info, strlen(user_info) + 1, 0);
                 }
             }
             printf("s> CONNECTEDUSERS OK\n");
         }
-        pthread_mutex_unlock(&users_mutex);
 
     } else {
         // si otra operación 
         printf("s> UNKNOWN OPERATION\n");
-    }   
+    }
 
+    //struct log_args log_data = {
+    //    username = username,
+    //    op = operation,
+    //    filename = filename
+    //};
+    //log_1(log_data, NULL, NULL);
+
+    pthread_mutex_unlock(&users_mutex);
     close(client_sock);
-    return NULL;
+    return NULL;    
 }
 
 // main
