@@ -1,4 +1,4 @@
-Práctica Final de Sistemas Distribuidos
+# Práctica Final de Sistemas Distribuidos
 **Autoras: Montserrat Martis Contreras, Marta Veber**
 
 Para compilar todo el proyecto se debe llamar a `make` en la terminal del directorio raíz. Este comando generará dos ejecutables:
