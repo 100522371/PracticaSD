@@ -203,6 +203,7 @@ void *handle_client(void *arg) {
             for (int i = 0; i < u->num_pending; i++) {
                 int enviado = 0;
                 int sock_dest = socket(AF_INET, SOCK_STREAM, 0);
+                int has_attach = u->pending[i].has_attachment;
 
                 struct sockaddr_in dest_addr;
                 dest_addr.sin_family = AF_INET;
@@ -212,7 +213,11 @@ void *handle_client(void *arg) {
                 if (connect(sock_dest, (struct sockaddr *)&dest_addr, sizeof(dest_addr)) == 0) {
 
                     //Enviar mensaje
-                    send(sock_dest, "SEND MESSAGE\0", strlen("SEND MESSAGE") + 1, 0);
+                    if (has_attach) {
+                        send(sock_dest, "SEND MESSAGE ATTACH\0", strlen("SEND MESSAGE ATTACH") + 1, 0);
+                    } else {
+                        send(sock_dest, "SEND MESSAGE\0", strlen("SEND MESSAGE") + 1, 0);
+                    }
                     send(sock_dest, u->pending[i].sender, strlen(u->pending[i].sender) + 1, 0);
 
                     char id_str[20];
@@ -220,7 +225,12 @@ void *handle_client(void *arg) {
                     send(sock_dest, id_str, strlen(id_str) + 1, 0);
                     send(sock_dest, u->pending[i].text, strlen(u->pending[i].text) + 1, 0);
 
-                    printf("s> SEND MESSAGE %u FROM %s TO %s\n", u->pending[i].id, u->pending[i].sender, username);
+                    if (has_attach) {
+                        send(sock_dest, u->pending[i].fileName, strlen(u->pending[i].fileName) + 1, 0);
+                        printf("s> SENDATTACH MESSAGE %u FROM %s TO %s FILE %s\n", u->pending[i].id, u->pending[i].sender, username, u->pending[i].fileName);
+                    } else{
+                        printf("s> SEND MESSAGE %u FROM %s TO %s\n", u->pending[i].id, u->pending[i].sender, username);
+                    }
                     enviado = 1;
 
                     //Añadir ACK al emisor
@@ -235,11 +245,16 @@ void *handle_client(void *arg) {
                         inet_pton(AF_INET, users[sender_idx].ip, &sender_addr.sin_addr);
 
                         if (connect(sock_sender, (struct sockaddr *)&sender_addr, sizeof(sender_addr)) == 0) {
-
-                            send(sock_sender, "SEND MESS ACK\0", strlen("SEND MESS ACK") + 1, 0);
                             char id_str_ack[20];
                             sprintf(id_str_ack, "%u", u->pending[i].id);
-                            send(sock_sender, id_str_ack, strlen(id_str_ack) + 1, 0);
+                            if (has_attach) {
+                                send(sock_sender, "SEND MESS ATTACH ACK\0", strlen("SEND MESS ATTACH ACK") + 1, 0);
+                                send(sock_sender, id_str_ack, strlen(id_str_ack) + 1, 0);
+                                send(sock_sender, u->pending[i].fileName, strlen(u->pending[i].fileName) + 1, 0);
+                            } else {
+                                send(sock_sender, "SEND MESS ACK\0", strlen("SEND MESS ACK") + 1, 0);
+                                send(sock_sender, id_str_ack, strlen(id_str_ack) + 1, 0);
+                            }
                         }
                         close(sock_sender);
                     }
@@ -431,17 +446,18 @@ void *handle_client(void *arg) {
             // almacenar si está desconectado
             if (!users[receiver_idx].connected) {
                 printf("s> MESSAGE %u FROM %s TO %s FILE %s STORED\n", msg_id, username, receiver, filename);
+
             }
             char code = 0;
             send(client_sock, &code, 1, 0);
 
-            char id_str[20];
-            sprintf(id_str, "%u", msg_id);
-            send(client_sock, id_str, strlen(id_str) + 1, 0);
-
-            printf("s> SENDATTACH MESSAGE %u FROM %s TO %s FILE %s\n", msg_id, username, receiver, filename);
-
             if (users[receiver_idx].connected) {
+                char id_str[20];
+                sprintf(id_str, "%u", msg_id);
+                send(client_sock, id_str, strlen(id_str) + 1, 0);
+                
+                printf("s> SENDATTACH MESSAGE %u FROM %s TO %s FILE %s\n", msg_id, username, receiver, filename);
+
                 int sock_dest = socket(AF_INET, SOCK_STREAM, 0);
                 struct sockaddr_in dest_addr;
                 dest_addr.sin_family = AF_INET;

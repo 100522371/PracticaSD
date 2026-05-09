@@ -110,7 +110,7 @@ class Client :
                 elif operacion == "SEND MESS ACK":
                     # El servidor nos notifica que un mensaje que enviamos fue entregado
                     msg_id = Client._recv_string(conn)
-                    print(f"\nc> SEND MESSAGE {msg_id} OK")
+                    print(f"\n SEND MESSAGE {msg_id} OK")
                     print("c> ", end="", flush=True)
 
                 elif operacion == "SEND MESSAGE ATTACH":
@@ -128,7 +128,7 @@ class Client :
                 elif operacion == "SEND MESS ATTACH ACK":
                     msg_id = Client._recv_string(conn)
                     filename = Client._recv_string(conn)
-                    print(f"\nc> SENDATTACH MESSAGE {msg_id} {filename} OK")
+                    print(f"\n SENDATTACH MESSAGE {msg_id} {filename} OK")
                     print("c> ", end="", flush=True)
                 
                 elif operacion == "GETFILE":
@@ -181,13 +181,13 @@ class Client :
         sock.close()
         codigo = respuesta[0]
         if codigo == 0:
-            print("c> REGISTER OK")
+            print("REGISTER OK")
             return Client.RC.OK
         elif codigo == 1:
-            print("c> USERNAME IN USE")
+            print("USERNAME IN USE")
             return Client.RC.USER_ERROR
         else:
-            print("c> REGISTER FAIL")
+            print("REGISTER FAIL")
             return Client.RC.ERROR
 
     # *
@@ -206,13 +206,13 @@ class Client :
         sock.close()
         codigo = respuesta[0]
         if codigo == 0:
-            print("c> UNREGISTER OK")
+            print("UNREGISTER OK")
             return Client.RC.OK
         elif codigo == 1:
-            print("c> USER DOES NOT EXIST")
+            print("USER DOES NOT EXIST")
             return Client.RC.USER_ERROR
         else:
-            print("c> UNREGISTER FAIL")
+            print("UNREGISTER FAIL")
             return Client.RC.ERROR
 
 
@@ -251,19 +251,19 @@ class Client :
             Client._socket = listen_sock
             # Guardamos el usuario conectado en la clase para usarlo en send y users
             Client._current_user = user
-            print("c> CONNECT OK")
+            print("CONNECT OK")
             return Client.RC.OK
         elif codigo == 1:
             listen_sock.close()
-            print("c> CONNECT FAIL, USER DOES NOT EXIST")
+            print("CONNECT FAIL, USER DOES NOT EXIST")
             return Client.RC.USER_ERROR
         elif codigo == 2:
             listen_sock.close()
-            print("c> USER ALREADY CONNECTED")
+            print("USER ALREADY CONNECTED")
             return Client.RC.USER_ERROR
         else:
             listen_sock.close()
-            print("c> CONNECT FAIL")
+            print("CONNECT FAIL")
             return Client.RC.ERROR
 
     # *
@@ -274,7 +274,7 @@ class Client :
     @staticmethod
     def  users() :
         if Client._current_user is None:
-            print("c> ERROR: NOT CONNECTED")
+            print("ERROR: NOT CONNECTED")
             return Client.RC.USER_ERROR
         
         sock = Client.connectToServer()
@@ -292,7 +292,7 @@ class Client :
                 num_usuarios = int(num_str)
             except ValueError:
                 sock.close()
-                print("c> CONNECTED USERS FAIL")
+                print("CONNECTED USERS FAIL")
                 return Client.RC.ERROR
             
             # Recibimos una cadena por usuario
@@ -303,18 +303,18 @@ class Client :
                 usuario, ip, puerto = cadena.split("::")
                 Client._usuarios.append((usuario, ip, puerto))
             sock.close()
-            print(f"c> CONNECTED USERS ({num_usuarios} users connected) OK")
+            print(f"CONNECTED USERS ({num_usuarios} users connected) OK")
             for u in Client._usuarios:
                 print(f"  {u[0]} :: {u[1]} :: {u[2]}")
             return Client.RC.OK
  
         elif codigo == 1:
             sock.close()
-            print("c> CONNECTED USERS FAIL, USER IS NOT CONNECTED")
+            print("CONNECTED USERS FAIL, USER IS NOT CONNECTED")
             return Client.RC.USER_ERROR
         else:
             sock.close()
-            print("c> CONNECTED USERS FAIL")
+            print("CONNECTED USERS FAIL")
             return Client.RC.ERROR
 
 
@@ -343,16 +343,16 @@ class Client :
  
         codigo = respuesta[0]
         if codigo == 0:
-            print("c> DISCONNECT OK")
+            print("DISCONNECT OK")
             return Client.RC.OK
         elif codigo == 1:
-            print("c> DISCONNECT FAIL, USER DOES NOT EXIST")
+            print("DISCONNECT FAIL, USER DOES NOT EXIST")
             return Client.RC.USER_ERROR
         elif codigo == 2:
-            print("c> DISCONNECT FAIL, USER NOT CONNECTED")
+            print("DISCONNECT FAIL, USER NOT CONNECTED")
             return Client.RC.USER_ERROR
         else:
-            print("c> DISCONNECT FAIL")
+            print("DISCONNECT FAIL")
             return Client.RC.ERROR
 
     # *
@@ -365,7 +365,7 @@ class Client :
     @staticmethod
     def  send(user,  message) :
         if Client._current_user is None:
-            print("c> ERROR: NOT CONNECTED")
+            print("ERROR: NOT CONNECTED")
             return Client.RC.USER_ERROR
         
         sock = Client.connectToServer()
@@ -387,15 +387,15 @@ class Client :
             # Éxito: leemos la cadena con el identificador del mensaje
             msg_id = Client._recv_string(sock)
             sock.close()
-            print(f"c> SEND OK - MESSAGE {msg_id}")
+            print(f"SEND OK - MESSAGE {msg_id}")
             return Client.RC.OK
         elif codigo == 1:
             sock.close()
-            print("c> SEND FAIL, USER DOES NOT EXIST")
+            print("SEND FAIL, USER DOES NOT EXIST")
             return Client.RC.USER_ERROR
         else:
             sock.close()
-            print("c> SEND FAIL")
+            print("SEND FAIL")
             return Client.RC.ERROR
 
     # *
@@ -409,7 +409,7 @@ class Client :
     @staticmethod
     def  sendAttach(user, message, file) :
         if Client._current_user is None:
-            print("c> ERROR: NOT CONNECTED")
+            print("ERROR: NOT CONNECTED")
             return Client.RC.USER_ERROR
         sock = Client.connectToServer()
         
@@ -431,15 +431,15 @@ class Client :
             # Éxito: leemos la cadena con el identificador del mensaje
             msg_id = Client._recv_string(sock)
             sock.close()
-            print(f"c> SENDATTACH OK - MESSAGE {msg_id}")
+            print(f"SENDATTACH OK - MESSAGE {msg_id}")
             return Client.RC.OK
         elif codigo == 1:
             sock.close()
-            print("c> SENDATTACH FAIL, USER DOES NOT EXIST")
+            print("SENDATTACH FAIL, USER DOES NOT EXIST")
             return Client.RC.USER_ERROR
         else:
             sock.close()
-            print("c> SENDATTACH FAIL")
+            print("SENDATTACH FAIL")
             return Client.RC.ERROR
     
     # *
@@ -453,7 +453,7 @@ class Client :
     @staticmethod
     def getfile(user, file, local_file):
         if Client._current_user is None:
-            print("c> ERROR: NOT CONNECTED")
+            print("ERROR: NOT CONNECTED")
             return Client.RC.USER_ERROR
         
         ip = None
@@ -468,7 +468,7 @@ class Client :
 
         # Si no se encuentra, actualizar y reintentar
         if ip is None:
-            print("c> User not found, refreshing user list...")
+            print("ERROR: User not found, refreshing user list...")
             Client.users()  # Actualizamos la lista de usuarios
         for u in Client._usuarios:
             if u[0] == user:
@@ -478,14 +478,14 @@ class Client :
 
         # Si después del reintento sigue sin encontrarse
         if ip is None:
-            print("c> FILE TRANSFER FAILED, user not connected")
+            print("FILE TRANSFER FAILED, user not connected")
             return Client.RC.USER_ERROR
         
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.connect((ip, puerto))
         except Exception as e:
-            print(f"c> FILE TRANSFER FAILED, could not connect to user {user}: {e}")
+            print(f"FILE TRANSFER FAILED, could not connect to user {user}: {e}")
             return Client.RC.ERROR
         
         # Enviamos "GETFILE\0" + user\0 + filename\0
@@ -498,7 +498,7 @@ class Client :
             file_size_str = Client._recv_string(sock)
             file_size = int(file_size_str)
         except (ValueError, TypeError):
-            print(f"c> FILE TRANSFER FAILED: Invalid file size received.")
+            print(f"FILE TRANSFER FAILED: Invalid file size received.")
             sock.close()
             return Client.RC.ERROR
 
@@ -513,13 +513,13 @@ class Client :
                     f.write(chunk)
                     bytes_received += len(chunk)
             if bytes_received == file_size:
-                print(f"c> FILE {file} RECEIVED AND SAVED AS {local_file}")
+                print(f"FILE {file} RECEIVED AND SAVED AS {local_file}")
                 return Client.RC.OK
             else:
-                print(f"c> FILE TRANSFER FAILED: Incomplete file")
+                print(f"FILE TRANSFER FAILED: Incomplete file")
                 return Client.RC.ERROR
         except Exception as e:
-            print(f"c> FILE TRANSFER FAILED: {e}")
+            print(f"FILE TRANSFER FAILED: {e}")
             return Client.RC.ERROR
         finally:
             sock.close()
