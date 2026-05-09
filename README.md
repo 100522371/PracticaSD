@@ -2,6 +2,7 @@ Práctica Final de Sistemas Distribuidos
 **Autoras: Montserrat Martis Contreras, Marta Veber**
 
 El proyecto está organizado de la siguiente manera:
+
 ├── Makefile              # Script de compilación
 ├── server.c              # Servidor de mensajería (cliente RPC)
 ├── server.h              # Definiciones de estructuras
