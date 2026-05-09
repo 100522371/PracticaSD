@@ -1,4 +1,4 @@
-Práctica 1 de Sistemas Distribuidos
+Práctica Final de Sistemas Distribuidos
 **Autoras: Montserrat Martis Contreras, Marta Veber**
 
 El proyecto está organizado de la siguiente manera:
